@@ -1,0 +1,621 @@
+// ==UserScript==
+// @name         Pop-up SISREG
+// @namespace    http://tampermonkey.net/
+// @version      3.7
+// @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
+// @author       Teylo Laundos Aguiar
+// @match        https://sisregiii.saude.gov.br/*
+// @grant        GM_openInTab
+// @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    let currentPopup = null;
+    let currentButton = null;
+    let whatsapp = null;
+
+    // Carrega o jsPDF corretamente
+    const { jsPDF } = window.jspdf;
+
+    // Função para buscar Data e Horário à direita do resultado do Profissional Executante
+    function findDateTime() {
+        const tables = document.getElementsByTagName('table');
+
+        for (let table of tables) {
+            const rows = table.rows;
+
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].cells;
+
+                for (let j = 0; j < cells.length; j++) {
+                    if (cells[j].textContent.trim() === "Profissional Executante:") {
+                        const valueRow = rows[i+1];
+                        if (valueRow) {
+                            const valueCell = valueRow.cells[j];
+                            if (valueCell) {
+                                const dateTimeCell = valueRow.cells[j+1];
+                                if (dateTimeCell) {
+                                    return dateTimeCell.textContent.trim();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // Função para buscar Unidade Executante
+    function findUnidadeExecutante() {
+        const tables = document.getElementsByTagName('table');
+
+        for (let table of tables) {
+            const rows = table.rows;
+
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].textContent.trim() === "UNIDADE EXECUTANTE") {
+                    if (i + 2 < rows.length) {
+                        const targetRow = rows[i + 2];
+                        if (targetRow.cells.length > 0) {
+                            return targetRow.cells[0].textContent.trim();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    // Função para buscar Nome do Paciente (atualizada)
+    function findNomePaciente() {
+        const tables = document.getElementsByTagName('table');
+
+        // Primeira tentativa: "DADOS DO PACIENTE"
+        for (let table of tables) {
+            const rows = table.rows;
+
+            for (let i = 0; i < rows.length; i++) {
+                if (rows[i].textContent.trim() === "DADOS DO PACIENTE") {
+                    if (i + 2 < rows.length) {
+                        const targetRow = rows[i + 2];
+                        if (targetRow.cells.length > 1) {
+                            return targetRow.cells[1].textContent.trim();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Segunda tentativa: "Nome do Paciente" e célula abaixo
+        for (let table of tables) {
+            const rows = table.rows;
+
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].cells;
+
+                for (let j = 0; j < cells.length; j++) {
+                    if (cells[j].textContent.trim() === "Nome do Paciente") {
+                        const value = findValueBelowInSameColumn(cells[j]);
+                        if (value) {
+                            return value;
+                        }
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Função para buscar Procedimentos
+    function findProcedures() {
+        const tables = document.getElementsByTagName('table');
+        const possibleHeaders = ["Procedimentos Solicitados:", "Procedimentos Autorizados:"];
+
+        for (let table of tables) {
+            const tBodies = table.tBodies;
+
+            for (let tbody of tBodies) {
+                const rows = tbody.rows;
+                let procedures = [];
+                let foundHeader = false;
+
+                for (let i = 0; i < rows.length; i++) {
+                    const cells = rows[i].cells;
+
+                    for (let j = 0; j < cells.length; j++) {
+                        const cellText = cells[j].textContent.trim();
+                        if (possibleHeaders.includes(cellText)) {
+                            foundHeader = true;
+                            continue;
+                        }
+                    }
+
+                    if (foundHeader && cells.length > 0) {
+                        const procedureText = cells[0].textContent.trim();
+                        if (procedureText && !possibleHeaders.includes(procedureText)) {
+                            procedures.push(procedureText);
+                        }
+                    }
+                }
+
+                if (procedures.length > 0) {
+                    return procedures.join('\n');
+                }
+            }
+        }
+        return null;
+    }
+
+    // Função para validar o número de WhatsApp
+    function validateWhatsApp(number) {
+        const num = number.replace(/\D/g, '');
+        if (num.length !== 11) return false;
+        if (num[2] !== '9') return false;
+        const numInt = parseInt(num);
+        return numInt > 11910000000 && numInt < 99999999999;
+    }
+
+    // Função para formatar a mensagem do WhatsApp
+    function formatWhatsAppMessage(data) {
+        let message = "Resumo da Solicitação SISREG\n\n";
+
+        message += `*Chave de Confirmação:* ${data["Chave de Confirmação:"] || 'Não informado'}\n`;
+        message += `*Código da Solicitação:* ${data["Código da Solicitação:"] || 'Não informado'}\n\n`;
+
+        message += `*Nome do Paciente:* ${data["Nome do Paciente"] || 'Não informado'}\n`;
+        message += `*Profissional Executante:* ${data["Profissional Executante:"] || 'Não informado'}\n`;
+
+        message += `\n*Data e Horário:* ${data["Data e Horário de Atendimento:"] || 'Não informado'}\n\n`;
+
+        message += `*Unidade Executante:* ${data["Unidade Executante:"] || 'Não informado'}\n`;
+
+        const endereco = data["Endereço:"] || '';
+        const numero = data["Número:"] || '';
+        const bairro = data["Bairro:"] || '';
+        const complemento = data["Complemento:"] || '';
+        message += `*Endereço:* ${endereco}${numero ? ', ' + numero : ''}${bairro ? ' - ' + bairro : ''}${complemento ? ', ' + complemento : ''}\n`;
+
+        message += `*Município:* ${data["Município:"] || 'Não informado'}\n\n`;
+        message += `*Procedimentos:*\n${(data["Procedimentos Solicitados:"] || 'Não informado').replace(/\n/g, '\n')}`;
+
+        return message;
+    }
+
+    // Função para atualizar o botão conforme o estado
+    function updateButton() {
+        if (!currentButton) return;
+
+        if (currentPopup) {
+            currentButton.innerText = 'Ocultar RESUMO';
+            currentButton.style.backgroundColor = '#f44336';
+        } else {
+            currentButton.innerText = 'Exibir RESUMO';
+            currentButton.style.backgroundColor = '#2196F3';
+        }
+    }
+
+    // Função para preparar o clone do formulário para PDF
+    function prepareFormClone(form) {
+        const formClone = form.cloneNode(true);
+
+        const elementsToRemove = [
+            'button',
+            'input[type="button"]',
+            'input[type="submit"]',
+            '.button-container',
+            '.btn-group',
+            '.form-actions'
+        ];
+
+        elementsToRemove.forEach(selector => {
+            formClone.querySelectorAll(selector).forEach(element => {
+                element.parentNode.removeChild(element);
+            });
+        });
+
+        const allElements = formClone.querySelectorAll('*');
+        allElements.forEach(element => {
+            const style = window.getComputedStyle(element);
+            if (style.borderColor !== 'transparent' && style.borderColor !== 'rgba(0, 0, 0, 0)') {
+                element.style.borderColor = 'rgba(0, 0, 0, 0.1)';
+            }
+        });
+
+        formClone.style.backgroundColor = 'white';
+        formClone.style.padding = '10px';
+        formClone.style.boxSizing = 'border-box';
+        formClone.style.position = 'absolute';
+        formClone.style.left = '-9999px';
+
+        return formClone;
+    }
+
+    // Função para gerar PDF
+    async function generatePDF(data) {
+        const form = document.querySelector('form[name="formulario"]');
+
+        if (!form) {
+            alert('Formulário não encontrado nesta página.');
+            return;
+        }
+
+        const loadingMsg = document.createElement('div');
+        loadingMsg.textContent = 'Gerando PDF, aguarde...';
+        loadingMsg.style.position = 'fixed';
+        loadingMsg.style.top = '20px';
+        loadingMsg.style.left = '50%';
+        loadingMsg.style.transform = 'translateX(-50%)';
+        loadingMsg.style.backgroundColor = '#004a8d';
+        loadingMsg.style.color = 'white';
+        loadingMsg.style.padding = '10px 20px';
+        loadingMsg.style.borderRadius = '5px';
+        loadingMsg.style.zIndex = '10000';
+        document.body.appendChild(loadingMsg);
+
+        try {
+            const formClone = prepareFormClone(form);
+            document.body.appendChild(formClone);
+
+            const canvas = await html2canvas(formClone, {
+                scale: 2,
+                logging: false,
+                useCORS: true,
+                allowTaint: true,
+                scrollY: -window.scrollY,
+                backgroundColor: '#FFFFFF'
+            });
+            document.body.removeChild(formClone);
+
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const margin = 5;
+            const pageWidth = 210;
+            const pageHeight = 297;
+            const maxContentHeight = 277;
+            const contentWidth = pageWidth - (margin * 2);
+
+            const imgRatio = canvas.width / canvas.height;
+            let imgWidth = contentWidth;
+            let imgHeight = imgWidth / imgRatio;
+
+            if (imgHeight > maxContentHeight) {
+                const splitHeight = Math.floor(canvas.height * (maxContentHeight / imgHeight));
+
+                const canvas1 = document.createElement('canvas');
+                canvas1.width = canvas.width;
+                canvas1.height = splitHeight;
+                const ctx1 = canvas1.getContext('2d');
+                ctx1.drawImage(canvas, 0, 0, canvas.width, splitHeight, 0, 0, canvas.width, splitHeight);
+
+                const canvas2 = document.createElement('canvas');
+                canvas2.width = canvas.width;
+                canvas2.height = canvas.height - splitHeight;
+                const ctx2 = canvas2.getContext('2d');
+                ctx2.drawImage(canvas, 0, splitHeight, canvas.width, canvas.height - splitHeight,
+                              0, 0, canvas.width, canvas.height - splitHeight);
+
+                const imgHeight1 = maxContentHeight;
+                const imgHeight2 = (canvas2.height * contentWidth) / canvas2.width;
+
+                pdf.addImage(canvas1, 'PNG', margin, margin, contentWidth, imgHeight1, undefined, 'FAST');
+                pdf.addPage();
+                pdf.addImage(canvas2, 'PNG', margin, margin, contentWidth, imgHeight2, undefined, 'FAST');
+            } else {
+                pdf.addImage(canvas, 'PNG', margin, margin, contentWidth, imgHeight, undefined, 'FAST');
+            }
+
+            const paciente = data["Nome do Paciente"] || 'formulario';
+            const codigo = data["Código da Solicitação:"] || '';
+            const fileName = `${paciente}${codigo ? ' (' + codigo + ')' : ''}.pdf`;
+
+            pdf.save(fileName);
+
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            alert('Erro ao gerar PDF: ' + error.message);
+        } finally {
+            if (loadingMsg.parentNode) {
+                document.body.removeChild(loadingMsg);
+            }
+        }
+    }
+
+    // Função para criar o pop-up
+    function createPopup(data) {
+        if (currentPopup) {
+            currentPopup.remove();
+            currentPopup = null;
+            updateButton();
+            return;
+        }
+
+        const popup = document.createElement('div');
+        popup.style.position = 'fixed';
+        popup.style.top = '50%';
+        popup.style.left = '50%';
+        popup.style.transform = 'translate(-50%, -50%)';
+        popup.style.backgroundColor = 'white';
+        popup.style.padding = '20px';
+        popup.style.border = '1px solid #ccc';
+        popup.style.borderRadius = '5px';
+        popup.style.boxShadow = '0 0 10px rgba(0,0,0,0.2)';
+        popup.style.zIndex = '9999';
+        popup.style.maxWidth = '80%';
+        popup.style.maxHeight = '80vh';
+        popup.style.overflowY = 'auto';
+
+        let content = '<h3 style="margin-top:0;">Resumo da Solicitação SISREG</h3><table style="width:100%; border-collapse:collapse;">';
+
+        content += `
+            <tr>
+                <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap; font-size:14px;">Chave de Confirmação</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:14px;">${data["Chave de Confirmação:"] || 'Não encontrado'}</td>
+            </tr>
+            <tr>
+                <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap; font-size:14px;">Código da Solicitação</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; color:#2196F3; font-weight:bold; font-size:14px;">${data["Código da Solicitação:"] || 'Não encontrado'}</td>
+            </tr>
+        `;
+
+        const orderedFields = [
+            "Nome do Paciente",
+            "Profissional Executante:",
+            "Data e Horário de Atendimento:",
+            "Unidade Executante:",
+            "Município:",
+            "Procedimentos Solicitados:"
+        ];
+
+        orderedFields.forEach(field => {
+            if (field === "Unidade Executante:") {
+                content += `
+                    <tr>
+                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">${field.replace(':', '')}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">${data[field] || 'Não encontrado'}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">Endereço</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">
+                            ${data["Endereço:"] || ''}${data["Número:"] ? ', ' + data["Número:"] : ''}
+                            ${data["Bairro:"] ? ' - ' + data["Bairro:"] : ''}
+                            ${data["Complemento:"] ? ', ' + data["Complemento:"] : ''}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                let value = data[field] || 'Não encontrado';
+                if (field === "Procedimentos Solicitados:" && value !== 'Não encontrado') {
+                    value = value.replace(/\n/g, '<br>');
+                }
+                content += `
+                    <tr>
+                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">${field.replace(':', '')}</td>
+                        <td style="padding:8px; border-bottom:1px solid #eee;">${value}</td>
+                    </tr>
+                `;
+            }
+        });
+
+        content += '</table>';
+
+        content += `
+            <div style="margin-top:20px;">
+                <label style="display:block; margin-bottom:5px; font-weight:bold;">Informar número do WhatsApp:</label>
+                <input type="text" id="whatsappInput" placeholder="Exemplo: 11987654321 (DDD + 9 + Celular)"
+                    maxlength="11" style="padding:8px; width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:4px;">
+                <div id="whatsappError" style="color:red; margin-top:5px; display:none;">Número inválido! Deve ter 11 dígitos e começar com DDD + 9</div>
+            </div>
+
+            <div style="margin-top:15px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+                <button id="sendWhatsAppBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#25D366; color:white; border:none; border-radius:4px; cursor:pointer;">
+                    Enviar mensagem por WhatsApp
+                </button>
+                <button id="downloadPDFBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#004a8d; color:white; border:none; border-radius:4px; cursor:pointer;">
+                    Baixar PDF
+                </button>
+                <button id="closePopupBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">
+                    Fechar
+                </button>
+            </div>
+        `;
+
+        popup.innerHTML = content;
+
+        const input = popup.querySelector('#whatsappInput');
+        const errorDiv = popup.querySelector('#whatsappError');
+        const sendBtn = popup.querySelector('#sendWhatsAppBtn');
+        const downloadBtn = popup.querySelector('#downloadPDFBtn');
+        const closeBtn = popup.querySelector('#closePopupBtn');
+
+        input.addEventListener('input', function() {
+            this.value = this.value.replace(/\D/g, '');
+            if (this.value && !validateWhatsApp(this.value)) {
+                errorDiv.style.display = 'block';
+                sendBtn.disabled = true;
+            } else {
+                errorDiv.style.display = 'none';
+                sendBtn.disabled = false;
+            }
+        });
+
+        sendBtn.addEventListener('click', function() {
+            if (!input.value || !validateWhatsApp(input.value)) {
+                errorDiv.style.display = 'block';
+                return;
+            }
+
+            whatsapp = input.value.replace(/\D/g, '');
+            const message = formatWhatsAppMessage(data);
+            const whatsappUrl = `https://web.whatsapp.com/send?phone=55${whatsapp}&text=${encodeURIComponent(message)}`;
+
+            if (typeof GM_openInTab !== 'undefined') {
+                GM_openInTab(whatsappUrl, { active: true });
+            } else {
+                window.open(whatsappUrl, '_blank');
+            }
+        });
+
+        downloadBtn.addEventListener('click', function() {
+            generatePDF(data);
+        });
+
+        closeBtn.addEventListener('click', function() {
+            popup.remove();
+            currentPopup = null;
+            updateButton();
+        });
+
+        setTimeout(() => {
+            input.focus();
+        }, 50);
+
+        document.body.appendChild(popup);
+        currentPopup = popup;
+        updateButton();
+    }
+
+    // Função para encontrar o valor abaixo na MESMA COLUNA
+    function findValueBelowInSameColumn(cell) {
+        const row = cell.parentElement;
+        const cellIndex = Array.from(row.cells).indexOf(cell);
+        const nextRow = row.nextElementSibling;
+
+        if (nextRow && nextRow.cells.length > cellIndex) {
+            return nextRow.cells[cellIndex].textContent.trim();
+        }
+        return null;
+    }
+
+    // Função para verificar se a chave de confirmação existe
+    function checkConfirmationKey() {
+        const tables = document.getElementsByTagName('table');
+
+        for (let table of tables) {
+            const rows = table.rows;
+
+            for (let i = 0; i < rows.length; i++) {
+                const cells = rows[i].cells;
+
+                for (let j = 0; j < cells.length; j++) {
+                    if (cells[j].textContent.trim() === "Chave de Confirmação:") {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    // Função para encontrar todos os campos solicitados
+    function findFields() {
+        const fieldsMapping = {
+            "Chave de Confirmação:": { special: false },
+            "Código da Solicitação:": { special: false },
+            "Nome do Paciente": { special: true, handler: findNomePaciente },
+            "Profissional Executante:": { special: false },
+            "Data e Horário de Atendimento:": { special: true, handler: findDateTime },
+            "Unidade Executante:": { special: true, handler: findUnidadeExecutante },
+            "Endereço:": { special: false },
+            "Número:": { special: false },
+            "Complemento:": { special: false },
+            "Bairro:": { special: false },
+            "Município:": { special: false },
+            "Procedimentos Solicitados:": { special: true, handler: findProcedures }
+        };
+
+        const result = {};
+
+        for (const [field, config] of Object.entries(fieldsMapping)) {
+            if (config.special) {
+                result[field] = config.handler();
+            } else {
+                result[field] = null;
+                const tables = document.getElementsByTagName('table');
+
+                tableLoop:
+                for (let table of tables) {
+                    const rows = table.rows;
+
+                    for (let i = 0; i < rows.length; i++) {
+                        const cells = rows[i].cells;
+
+                        for (let j = 0; j < cells.length; j++) {
+                            const cellText = cells[j].textContent.trim();
+                            if (field === "Município:" && (cellText === "Município:" || cellText === "Municipio:")) {
+                                const value = findValueBelowInSameColumn(cells[j]);
+                                if (value) {
+                                    result[field] = value;
+                                    break tableLoop;
+                                }
+                            }
+                            else if (cellText === field) {
+                                const value = findValueBelowInSameColumn(cells[j]);
+                                if (value) {
+                                    result[field] = value;
+                                    break tableLoop;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // Função para adicionar o botão
+    function addButton() {
+        if (!checkConfirmationKey()) {
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.innerText = 'Exibir RESUMO';
+        btn.style.position = 'fixed';
+        btn.style.bottom = '20px';
+        btn.style.right = '20px';
+        btn.style.padding = '10px 15px';
+        btn.style.backgroundColor = '#2196F3';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '4px';
+        btn.style.cursor = 'pointer';
+        btn.style.zIndex = '9998';
+        btn.style.fontWeight = 'bold';
+        btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
+        btn.style.fontSize = '14px';
+
+        btn.onclick = function() {
+            if (currentPopup) {
+                currentPopup.remove();
+                currentPopup = null;
+            } else {
+                const data = findFields();
+                createPopup(data);
+            }
+            updateButton();
+        };
+
+        document.body.appendChild(btn);
+        currentButton = btn;
+    }
+
+    // Observa mudanças no DOM
+    const observer = new MutationObserver(function(mutations, obs) {
+        if (document.readyState === 'complete') {
+            addButton();
+            obs.disconnect();
+        }
+    });
+
+    observer.observe(document, {
+        childList: true,
+        subtree: true,
+        attributes: true
+    });
+})();
