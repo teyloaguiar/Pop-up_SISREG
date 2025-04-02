@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Pop-up SISREG
 // @namespace    http://tampermonkey.net/
-// @version      3.7.2
+// @version      3.8
 // @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
 // @author       Teylo Laundos Aguiar
 // @match        https://sisregiii.saude.gov.br/*
 // @updateURL    https://github.com/teyloaguiar/Pop-up_SISREG/raw/refs/heads/main/Pop-up_SISREG.user.js
 // @downloadURL  https://github.com/teyloaguiar/Pop-up_SISREG/raw/refs/heads/main/Pop-up_SISREG.user.js
 // @grant        GM_openInTab
+// @grant        GM_addStyle
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
 // ==/UserScript==
@@ -21,6 +22,103 @@
 
     // Carrega o jsPDF corretamente
     const { jsPDF } = window.jspdf;
+
+    // Adiciona estilos CSS diretamente
+    GM_addStyle(`
+        .sisreg-popup-button {
+            position: fixed !important;
+            bottom: 20px !important;
+            right: 20px !important;
+            padding: 10px 15px !important;
+            background-color: #2196F3 !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            z-index: 9998 !important;
+            font-weight: bold !important;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
+            font-size: 14px !important;
+        }
+
+        .sisreg-popup-button:hover {
+            opacity: 0.9 !important;
+        }
+
+        .sisreg-popup-button.active {
+            background-color: #f44336 !important;
+        }
+
+        .sisreg-popup-container {
+            position: fixed !important;
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            background-color: white !important;
+            padding: 20px !important;
+            border: 1px solid #ccc !important;
+            border-radius: 5px !important;
+            box-shadow: 0 0 10px rgba(0,0,0,0.2) !important;
+            z-index: 9999 !important;
+            max-width: 80% !important;
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+        }
+
+        .sisreg-popup-container h3 {
+            margin-top: 0 !important;
+        }
+
+        .sisreg-popup-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+        }
+
+        .sisreg-popup-table td {
+            padding: 8px !important;
+            border-bottom: 1px solid #eee !important;
+            font-size: 14px !important;
+        }
+
+        .sisreg-popup-table td:first-child {
+            font-weight: bold !important;
+            vertical-align: top !important;
+            white-space: nowrap !important;
+        }
+
+        .sisreg-popup-buttons-container {
+            margin-top: 15px !important;
+            display: flex !important;
+            justify-content: space-between !important;
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+        }
+
+        .sisreg-popup-button-action {
+            flex: 1 !important;
+            min-width: 150px !important;
+            padding: 8px 15px !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+        }
+
+        .sisreg-whatsapp-input {
+            padding: 8px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+            border: 1px solid #ddd !important;
+            border-radius: 4px !important;
+            margin-bottom: 5px !important;
+        }
+
+        .sisreg-error-message {
+            color: red !important;
+            margin-top: 5px !important;
+            display: none !important;
+        }
+    `);
 
     // Função para buscar Data e Horário à direita do resultado do Profissional Executante
     function findDateTime() {
@@ -193,11 +291,11 @@
         if (!currentButton) return;
 
         if (currentPopup) {
-            currentButton.innerText = 'Ocultar RESUMO';
-            currentButton.style.backgroundColor = '#f44336';
+            currentButton.textContent = 'Ocultar RESUMO';
+            currentButton.classList.add('active');
         } else {
-            currentButton.innerText = 'Exibir RESUMO';
-            currentButton.style.backgroundColor = '#2196F3';
+            currentButton.textContent = 'Exibir RESUMO';
+            currentButton.classList.remove('active');
         }
     }
 
@@ -336,30 +434,18 @@
         }
 
         const popup = document.createElement('div');
-        popup.style.position = 'fixed';
-        popup.style.top = '50%';
-        popup.style.left = '50%';
-        popup.style.transform = 'translate(-50%, -50%)';
-        popup.style.backgroundColor = 'white';
-        popup.style.padding = '20px';
-        popup.style.border = '1px solid #ccc';
-        popup.style.borderRadius = '5px';
-        popup.style.boxShadow = '0 0 10px rgba(0,0,0,0.2)';
-        popup.style.zIndex = '9999';
-        popup.style.maxWidth = '80%';
-        popup.style.maxHeight = '80vh';
-        popup.style.overflowY = 'auto';
+        popup.className = 'sisreg-popup-container';
 
-        let content = '<h3 style="margin-top:0;">Resumo da Solicitação SISREG</h3><table style="width:100%; border-collapse:collapse;">';
+        let content = '<h3>Resumo da Solicitação SISREG</h3><table class="sisreg-popup-table">';
 
         content += `
             <tr>
-                <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap; font-size:14px;">Chave de Confirmação</td>
-                <td style="padding:8px; border-bottom:1px solid #eee; font-size:14px;">${data["Chave de Confirmação:"] || 'Não encontrado'}</td>
+                <td>Chave de Confirmação</td>
+                <td>${data["Chave de Confirmação:"] || 'Não encontrado'}</td>
             </tr>
             <tr>
-                <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap; font-size:14px;">Código da Solicitação</td>
-                <td style="padding:8px; border-bottom:1px solid #eee; color:#2196F3; font-weight:bold; font-size:14px;">${data["Código da Solicitação:"] || 'Não encontrado'}</td>
+                <td>Código da Solicitação</td>
+                <td style="color:#2196F3; font-weight:bold;">${data["Código da Solicitação:"] || 'Não encontrado'}</td>
             </tr>
         `;
 
@@ -376,12 +462,12 @@
             if (field === "Unidade Executante:") {
                 content += `
                     <tr>
-                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">${field.replace(':', '')}</td>
-                        <td style="padding:8px; border-bottom:1px solid #eee;">${data[field] || 'Não encontrado'}</td>
+                        <td>${field.replace(':', '')}</td>
+                        <td>${data[field] || 'Não encontrado'}</td>
                     </tr>
                     <tr>
-                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">Endereço</td>
-                        <td style="padding:8px; border-bottom:1px solid #eee;">
+                        <td>Endereço</td>
+                        <td>
                             ${data["Endereço:"] || ''}${data["Número:"] ? ', ' + data["Número:"] : ''}
                             ${data["Bairro:"] ? ' - ' + data["Bairro:"] : ''}
                             ${data["Complemento:"] ? ', ' + data["Complemento:"] : ''}
@@ -395,8 +481,8 @@
                 }
                 content += `
                     <tr>
-                        <td style="padding:8px; border-bottom:1px solid #eee; font-weight:bold; vertical-align:top; white-space:nowrap;">${field.replace(':', '')}</td>
-                        <td style="padding:8px; border-bottom:1px solid #eee;">${value}</td>
+                        <td>${field.replace(':', '')}</td>
+                        <td>${value}</td>
                     </tr>
                 `;
             }
@@ -407,19 +493,20 @@
         content += `
             <div style="margin-top:20px;">
                 <label style="display:block; margin-bottom:5px; font-weight:bold;">Informar número do WhatsApp:</label>
-                <input type="text" id="whatsappInput" placeholder="Exemplo: 11987654321 (DDD + 9 + Celular)"
-                    maxlength="11" style="padding:8px; width:100%; box-sizing:border-box; border:1px solid #ddd; border-radius:4px;">
-                <div id="whatsappError" style="color:red; margin-top:5px; display:none;">Número inválido! Deve ter 11 dígitos e começar com DDD + 9</div>
+                <input type="text" id="whatsappInput" class="sisreg-whatsapp-input"
+                    placeholder="Exemplo: 11987654321 (DDD + 9 + Celular)"
+                    maxlength="11">
+                <div id="whatsappError" class="sisreg-error-message">Número inválido! Deve ter 11 dígitos e começar com DDD + 9</div>
             </div>
 
-            <div style="margin-top:15px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;">
-                <button id="sendWhatsAppBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#25D366; color:white; border:none; border-radius:4px; cursor:pointer;">
+            <div class="sisreg-popup-buttons-container">
+                <button id="sendWhatsAppBtn" class="sisreg-popup-button-action" style="background-color:#25D366;">
                     Enviar mensagem por WhatsApp
                 </button>
-                <button id="downloadPDFBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#004a8d; color:white; border:none; border-radius:4px; cursor:pointer;">
+                <button id="downloadPDFBtn" class="sisreg-popup-button-action" style="background-color:#004a8d;">
                     Baixar PDF
                 </button>
-                <button id="closePopupBtn" style="flex:1; min-width:150px; padding:8px 15px; background-color:#f44336; color:white; border:none; border-radius:4px; cursor:pointer;">
+                <button id="closePopupBtn" class="sisreg-popup-button-action" style="background-color:#f44336;">
                     Fechar
                 </button>
             </div>
@@ -576,21 +663,14 @@
             return;
         }
 
+        // Remove o botão existente se houver
+        if (currentButton) {
+            currentButton.remove();
+        }
+
         const btn = document.createElement('button');
-        btn.innerText = 'Exibir RESUMO';
-        btn.style.position = 'fixed';
-        btn.style.bottom = '20px';
-        btn.style.right = '20px';
-        btn.style.padding = '10px 15px';
-        btn.style.backgroundColor = '#2196F3';
-        btn.style.color = 'white';
-        btn.style.border = 'none';
-        btn.style.borderRadius = '4px';
-        btn.style.cursor = 'pointer';
-        btn.style.zIndex = '9998';
-        btn.style.fontWeight = 'bold';
-        btn.style.boxShadow = '0 2px 5px rgba(0,0,0,0.2)';
-        btn.style.fontSize = '14px';
+        btn.className = 'sisreg-popup-button';
+        btn.textContent = 'Exibir RESUMO';
 
         btn.onclick = function() {
             if (currentPopup) {
@@ -607,17 +687,38 @@
         currentButton = btn;
     }
 
-    // Observa mudanças no DOM
-    const observer = new MutationObserver(function(mutations, obs) {
-        if (document.readyState === 'complete') {
+    // Função para verificar se a página está pronta
+    function checkPageReady() {
+        // Verifica se o DOM está completamente carregado
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            // Adiciona um pequeno atraso para garantir que todos os elementos estejam carregados
+            setTimeout(addButton, 1000);
+        } else {
+            // Se não estiver pronto, espera pelo evento DOMContentLoaded
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(addButton, 1000);
+            });
+        }
+    }
+
+    // Inicia o script
+    checkPageReady();
+
+    // Observa mudanças no DOM como fallback
+    const observer = new MutationObserver(function(mutations) {
+        // Verifica se o botão já foi adicionado
+        if (!currentButton) {
             addButton();
-            obs.disconnect();
         }
     });
 
     observer.observe(document, {
         childList: true,
-        subtree: true,
-        attributes: true
+        subtree: true
+    });
+
+    // Adiciona também um listener para mudanças de rota em SPAs
+    window.addEventListener('popstate', function() {
+        setTimeout(addButton, 1000);
     });
 })();
