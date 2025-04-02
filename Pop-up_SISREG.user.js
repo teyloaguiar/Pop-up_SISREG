@@ -5,8 +5,8 @@
 // @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
 // @author       Teylo Laundos Aguiar
 // @match        https://sisregiii.saude.gov.br/*
-// @updateURL    https://raw.githubusercontent.com/teyloaguiar/Pop-up_SISREG/main/Pop-up_SISREG.user.js
-// @downloadURL  https://raw.githubusercontent.com/teyloaguiar/Pop-up_SISREG/main/Pop-up_SISREG.user.js
+// @updateURL    https://github.com/teyloaguiar/Pop-up_SISREG/raw/refs/heads/main/Pop-up_SISREG.user.js
+// @downloadURL  https://github.com/teyloaguiar/Pop-up_SISREG/raw/refs/heads/main/Pop-up_SISREG.user.js
 // @grant        GM_openInTab
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 // @require      https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js
