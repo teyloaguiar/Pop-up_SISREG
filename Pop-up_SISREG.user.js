@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pop-up SISREG
 // @namespace    http://tampermonkey.net/
-// @version      3.7
+// @version      3.7.1
 // @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
 // @author       Teylo Laundos Aguiar
 // @match        https://sisregiii.saude.gov.br/*
