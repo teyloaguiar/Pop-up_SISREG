@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pop-up SISREG
 // @namespace    http://tampermonkey.net/
-// @version      3.8
+// @version      3.9
 // @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
 // @author       Teylo Laundos Aguiar
 // @match        https://sisregiii.saude.gov.br/*
@@ -262,7 +262,7 @@
 
     // Função para formatar a mensagem do WhatsApp
     function formatWhatsAppMessage(data) {
-        let message = "Resumo da Solicitação SISREG\n\n";
+        let message = "*DIGITE:*\n\n*1* - Para `CONFIRMAR` esse atendimento;\n\n*9* - Para `CANCELAR` esse pedido, pois não precisa mais desse atendimento.\n\n\nRESUMO DA SOLICITAÇÃO SISREG\n\n";
 
         message += `*Chave de Confirmação:* ${data["Chave de Confirmação:"] || 'Não informado'}\n`;
         message += `*Código da Solicitação:* ${data["Código da Solicitação:"] || 'Não informado'}\n\n`;
