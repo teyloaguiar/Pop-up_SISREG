@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pop-up SISREG
 // @namespace    http://tampermonkey.net/
-// @version      3.9
+// @version      4.3
 // @description  Pop-up com resumo da solicitação do SISREG e envio por WhatsApp
 // @author       Teylo Laundos Aguiar
 // @match        https://sisregiii.saude.gov.br/*
@@ -262,26 +262,27 @@
 
     // Função para formatar a mensagem do WhatsApp
     function formatWhatsAppMessage(data) {
-        let message = "*DIGITE:*\n\n*1* - Para `CONFIRMAR` esse atendimento;\n\n*9* - Para `CANCELAR` esse pedido, pois não precisa mais desse atendimento.\n\n\nRESUMO DA SOLICITAÇÃO SISREG\n\n";
+        let message = "🧑‍⚕️ *Seu agendamento foi realizado!*\n\n ⚠️ *ATENÇÃO* ⚠️\n\n> *Digite 1️⃣ para* ✅ \`CONFIRMAR\`\n> _Irei ao atendimento._\n\n> *Digite 9️⃣ para* ❌ \`CANCELAR\`\n> _Não preciso mais desse atendimento._\n\n";
 
-        message += `*Chave de Confirmação:* ${data["Chave de Confirmação:"] || 'Não informado'}\n`;
-        message += `*Código da Solicitação:* ${data["Código da Solicitação:"] || 'Não informado'}\n\n`;
+        message += `\`\`\`-----------------------\n SOLICITAÇÃO ${data["Código da Solicitação:"]  || 'Não informado'}\`\`\`\n\`\`\`-----------------------\`\`\`\n\n`;
 
-        message += `*Nome do Paciente:* ${data["Nome do Paciente"] || 'Não informado'}\n`;
-        message += `*Profissional Executante:* ${data["Profissional Executante:"] || 'Não informado'}\n`;
+        message += `🔑 \`CHAVE DE CONFIRMAÇÃO:\`\n └─ ${data["Chave de Confirmação:"] || 'Não informado'}\n\n`;
 
-        message += `\n*Data e Horário:* ${data["Data e Horário de Atendimento:"] || 'Não informado'}\n\n`;
+        message += `👤 \`NOME DO PACIENTE:\`\n └─ ${data["Nome do Paciente"] || 'Não informado'}\n\n`;
+        message += `🩺 \`PROFISSIONAL EXECUTANTE:\`\n └─ ${data["Profissional Executante:"] || 'Não informado'}\n\n`;
 
-        message += `*Unidade Executante:* ${data["Unidade Executante:"] || 'Não informado'}\n`;
+        message += `🗓️ \`DATA E HORÁRIO:\`\n └─ ${data["Data e Horário de Atendimento:"] || 'Não informado'}\n\n`;
+
+        message += `📌️ \`LOCAL DO ATENDIMENTO:\`\n └─ *${data["Unidade Executante:"] || 'Não informado'}* - `;
 
         const endereco = data["Endereço:"] || '';
         const numero = data["Número:"] || '';
         const bairro = data["Bairro:"] || '';
         const complemento = data["Complemento:"] || '';
-        message += `*Endereço:* ${endereco}${numero ? ', ' + numero : ''}${bairro ? ' - ' + bairro : ''}${complemento ? ', ' + complemento : ''}\n`;
+        message += `${endereco}${numero ? ', ' + numero : ''}${bairro ? ' - ' + bairro : ''}${complemento ? ', ' + complemento : ''}`;
 
-        message += `*Município:* ${data["Município:"] || 'Não informado'}\n\n`;
-        message += `*Procedimentos:*\n${(data["Procedimentos Solicitados:"] || 'Não informado').replace(/\n/g, '\n')}`;
+        message += `, ${data["Município:"] || 'Não informado'}\n\n`;
+        message += `\`PROCEDIMENTO:\`\n- ${(data["Procedimentos Solicitados:"] || 'Não informado').replace(/\n/g, '\n- ')}`;
 
         return message;
     }
